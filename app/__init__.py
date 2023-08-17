@@ -9,4 +9,5 @@ db = SQLAlchemy(app)
 
 from app import routes
 
+app.app_context().push()
 db.create_all()
