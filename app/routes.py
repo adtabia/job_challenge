@@ -1,9 +1,6 @@
 from flask import request, jsonify
 from app import app, db
 from app.models import model_cols, Departments, HiredEmployees, Jobs
-import csv
-import os
-import io
 import pandas as pd
 import dateutil
 from sqlalchemy import text
@@ -122,30 +119,25 @@ def upload_and_batch_insert():
 
 
 @app.route('/hires-quater-2021', methods=['GET'])
-def hires_by_quarter_2021_sql():
+def hires_quater():
     sql = text("""
-    SELECT 
-    d.department,
-    j.job,
-    CASE 
-        WHEN strftime('%m', e.datetime) BETWEEN '01' AND '03' THEN 'Q1'
-        WHEN strftime('%m', e.datetime) BETWEEN '04' AND '06' THEN 'Q2'
-        WHEN strftime('%m', e.datetime) BETWEEN '07' AND '09' THEN 'Q3'
-        WHEN strftime('%m', e.datetime) BETWEEN '10' AND '12' THEN 'Q4'
-    END AS quarter,
-    COUNT(e.id) AS num_hires
-FROM 
-    hired_employees e
-JOIN 
-    departments d ON e.department_id = d.id
-JOIN 
-    jobs j ON e.job_id = j.id
-WHERE 
-    strftime('%Y', e.datetime) = '2021'
-GROUP BY 
-    d.department, j.job, quarter
-ORDER BY 
-    d.department, j.job;
+    SELECT d.department,
+           j.job,
+           CASE 
+            WHEN strftime('%m', e.datetime) BETWEEN '01' AND '03' THEN 'Q1'
+            WHEN strftime('%m', e.datetime) BETWEEN '04' AND '06' THEN 'Q2'
+            WHEN strftime('%m', e.datetime) BETWEEN '07' AND '09' THEN 'Q3'
+            WHEN strftime('%m', e.datetime) BETWEEN '10' AND '12' THEN 'Q4'
+           END AS quarter,
+           COUNT(e.id) AS num_hires
+    FROM hired_employees e
+    INNER JOIN departments d
+        ON e.department_id = d.id
+    INNER JOIN jobs j
+        ON e.job_id = j.id
+    WHERE strftime('%Y', e.datetime) = '2021'
+    GROUP BY d.department, j.job, quarter
+    ORDER BY d.department, j.job;
     """)
     # Get a connection and execute the SQL
     with db.engine.connect() as connection:
@@ -153,7 +145,7 @@ ORDER BY
         rows = result.fetchall()
 
     # Convert results to a table structure
-    table_header = ["Department", "Job", "Quarter", "Number of Hires"]
+    table_header = ["department", "job", "quarter", "number_of_hires"]
     table_data = [list(row) for row in rows]
 
     table = {
@@ -165,26 +157,29 @@ ORDER BY
 
 
 
-@app.route('/hires-upper-avg', methods=['GET'])
-def hires_upper_average():
+@app.route('/hires-upper-mean', methods=['GET'])
+def hires_upper_mean():
     sql = text("""
     WITH MeanHires AS (
-    SELECT AVG(hire_count) AS mean_hires
-    FROM (
-        SELECT department_id, COUNT(id) AS hire_count
-        FROM hired_employees
-        WHERE strftime('%Y', datetime) = '2021'
-        GROUP BY department_id
+        SELECT AVG(hire_count) AS mean_hires
+        FROM (
+            SELECT department_id,
+                   COUNT(id) AS hire_count
+            FROM hired_employees
+            WHERE strftime('%Y', datetime) = '2021'
+            GROUP BY department_id
+        )
     )
-)
-
-SELECT d.id, d.department AS name, COUNT(e.id) AS num_hires
-FROM departments d
-JOIN hired_employees e ON d.id = e.department_id
-WHERE strftime('%Y', e.datetime) = '2021'
-GROUP BY d.id, d.department
-HAVING COUNT(e.id) > (SELECT mean_hires FROM MeanHires)
-ORDER BY num_hires DESC;
+    SELECT d.id,
+           d.department,
+           COUNT(e.id) AS num_hires
+    FROM departments d
+    INNER JOIN hired_employees e
+        ON d.id = e.department_id
+    WHERE strftime('%Y', e.datetime) = '2021'
+    GROUP BY d.id, d.department
+    HAVING COUNT(e.id) > (SELECT mean_hires FROM MeanHires)
+    ORDER BY num_hires DESC;
     """)
     # Get a connection and execute the SQL
     with db.engine.connect() as connection:
